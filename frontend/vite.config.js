@@ -13,6 +13,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    allowedHosts: ['mirofish.private.igorkey.pro'],
     open: true,
     proxy: {
       '/api': {
