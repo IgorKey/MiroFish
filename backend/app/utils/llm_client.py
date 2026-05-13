@@ -66,7 +66,7 @@ class LLMClient:
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
         content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
         return content
-    
+
     def chat_json(
         self,
         messages: List[Dict[str, str]],
@@ -77,63 +77,62 @@ class LLMClient:
         Send chat request and return parsed JSON.
         Adds a repair retry when the model ignores JSON mode.
         """
-    json_instruction = {
-        "role": "user",
-        "content": (
-            "IMPORTANT: Return valid JSON only. "
-            "Do not include markdown, explanations, headings, bullet lists, or code fences. "
-            "The response must start with '{' and end with '}'."
-        )
-    }
+        json_instruction = {
+            "role": "user",
+            "content": (
+                "IMPORTANT: Return valid JSON only. "
+                "Do not include markdown, explanations, headings, bullet lists, or code fences. "
+                "The response must start with '{' and end with '}'."
+            )
+        }
 
-    response = self.chat(
-        messages=messages + [json_instruction],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        response_format={"type": "json_object"}
-    )
-
-    cleaned_response = response.strip()
-    cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
-    cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response).strip()
-
-    try:
-        return json.loads(cleaned_response)
-    except json.JSONDecodeError:
-        # Retry: ask the model to convert its own invalid response into strict JSON.
-        repair_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a JSON repair tool. "
-                    "Convert the provided text into valid JSON only. "
-                    "Do not include markdown or explanations. "
-                    "The JSON must match the schema requested in the previous task."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    "The previous response was not valid JSON. "
-                    "Convert it into valid JSON only.\n\n"
-                    f"Invalid response:\n{cleaned_response}"
-                )
-            }
-        ]
-
-        repaired = self.chat(
-            messages=repair_messages,
-            temperature=0,
+        response = self.chat(
+            messages=messages + [json_instruction],
+            temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"}
         )
 
-        repaired = repaired.strip()
-        repaired = re.sub(r'^```(?:json)?\s*\n?', '', repaired, flags=re.IGNORECASE)
-        repaired = re.sub(r'\n?```\s*$', '', repaired).strip()
+        cleaned_response = response.strip()
+        cleaned_response = re.sub(r'^```(?:json)?\s*\n?', '', cleaned_response, flags=re.IGNORECASE)
+        cleaned_response = re.sub(r'\n?```\s*$', '', cleaned_response).strip()
 
         try:
-            return json.loads(repaired)
+            return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            raise ValueError(f"LLM returned invalid JSON even after repair: {repaired}")
+            # Retry: ask the model to convert its own invalid response into strict JSON.
+            repair_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a JSON repair tool. "
+                        "Convert the provided text into valid JSON only. "
+                        "Do not include markdown or explanations. "
+                        "The JSON must match the schema requested in the previous task."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "The previous response was not valid JSON. "
+                        "Convert it into valid JSON only.\n\n"
+                        f"Invalid response:\n{cleaned_response}"
+                    )
+                }
+            ]
 
+            repaired = self.chat(
+                messages=repair_messages,
+                temperature=0,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"}
+            )
+
+            repaired = repaired.strip()
+            repaired = re.sub(r'^```(?:json)?\s*\n?', '', repaired, flags=re.IGNORECASE)
+            repaired = re.sub(r'\n?```\s*$', '', repaired).strip()
+
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                raise ValueError(f"LLM returned invalid JSON even after repair: {repaired}")
